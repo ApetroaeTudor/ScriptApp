@@ -34,30 +34,29 @@ def client_loop(q:thr_safe_q[str],port)->bool:
         if ready_to_read:
             try:
                 msg = cl_socket.recv(max_msg_len)
-                print(msg.decode("utf-8"))
             except BlockingIOError:
                 continue
 
-            # msg_json = json.loads(msg)
-            #
-            # msg_type = msg_json.get("type")
-            # msg_content = msg_json.get("message")
-            # msg_line = msg_json.get("line")
-            #
-            # if msg == b'':
-            #     q.put("Server closed")
-            #     cl_socket.close()
-            #     return True
-            # elif msg_type == "status":
-            #     q.put("LINE: {0} - [{1}]:{2}".format(msg_line,msg_type,msg_content))
-            # elif msg_type == "error" or msg_type == "finished":
-            #     q.put("LINE: {0} - [{1}]:{2}".format(msg_line,msg_type,msg_content))
-            #     cl_socket.close()
-            #     return True
-            # else:
-            #     q.put("ERROR: Invalid message received!")
-            #     cl_socket.close()
-            #     return True
+            msg_json = json.loads(msg)
+
+            msg_type = msg_json.get("type")
+            msg_content = msg_json.get("message")
+            msg_line = msg_json.get("line")
+
+            if msg == b'':
+                q.put("Server closed")
+                cl_socket.close()
+                return True
+            elif msg_type == "status":
+                q.put("LINE: {0} - [{1}]:{2}".format(msg_line,msg_type,msg_content))
+            elif msg_type == "error" or msg_type == "finished":
+                q.put("LINE: {0} - [{1}]:{2}".format(msg_line,msg_type,msg_content))
+                cl_socket.close()
+                return True
+            else:
+                q.put("ERROR: Invalid message received!")
+                cl_socket.close()
+                return True
 
             thr_safe_q.put("SERVER`"+msg.decode("utf-8"))
 
