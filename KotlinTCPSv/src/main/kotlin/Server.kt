@@ -22,7 +22,7 @@ suspend fun launch_sv(scope: CoroutineScope)
                     val received_val = cl_receive_ch.readUTF8Line()?:"?"
                     println(received_val)
                     if(received_val == "woof"){
-                        cl_send_ch.writeStringUtf8("hello from sv\n")
+//                        cl_send_ch.writeStringUtf8("hello from sv\n")
                     }
                 }
                 cl_socket.close()
