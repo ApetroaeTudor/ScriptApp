@@ -23,7 +23,6 @@ class MainWindow(QMainWindow):
     total_nr_lines = 0
     current_debug_line = 0
 
-
     def __init__(self):
         super().__init__()
         self.my_executor = ThreadPoolExecutor(max_workers=1)
@@ -121,7 +120,8 @@ class MainWindow(QMainWindow):
 
     def step_in_event(self):
         self.current_debug_line = self.current_debug_line+1 if self.current_debug_line<self.total_nr_lines else self.current_debug_line
-
+        msg_to_sv = m.MessageFrame(sender=m.CLIENT_NAME,purpose=m.PURPOSE_EXECUTE,destination=m.SERVER_NAME,message=str(self.current_debug_line)).get_string()
+        self.my_q.put(msg_to_sv)
 
     def exit_button_event(self):
         global current_state
@@ -148,6 +148,8 @@ class MainWindow(QMainWindow):
             else:
                 self.my_is_client_launched = True
                 self.my_client_status_lbl.setText("Client is running..")
+
+        # should try to get messages from the queue with purpose UPDATE_CONSOLE OK or ERR sender SERVER destination CLIENT
 
         self.my_step_in_button.setVisible(True if current_state==States.DEBUGGING else False)
         self.my_step_in_button.setDisabled(False if current_state==States.DEBUGGING else True)
