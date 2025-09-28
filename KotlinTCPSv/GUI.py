@@ -1,10 +1,12 @@
 from queue import Queue
 from enum import Enum
 
+
+import traceback
+
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QTextCursor, QTextFormat, QTextCharFormat, QColor, QFont
 from PyQt5.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QLabel, QVBoxLayout, QTextEdit, QHBoxLayout
-from mesonbuild.mtest import join_lines
 
 import client
 import messages as m
@@ -20,7 +22,8 @@ current_state = States.IDLE
 
 class MainWindow(QMainWindow):
     my_is_client_launched = False
-    my_q:Queue[str] = client.thr_safe_q()
+    my_q:client.thr_safe_q[str] = client.thr_safe_q()
+    server_q:client.thr_safe_q[str] = client.thr_safe_q()
     port = 8080
 
 
@@ -48,7 +51,8 @@ class MainWindow(QMainWindow):
 
         self.my_output_text_box = QTextEdit(self)
         self.my_output_text_box.setReadOnly(True)
-        self.my_output_text_box.setFixedSize(200,70)
+        self.my_output_text_box.setFixedSize(500,90)
+        self.my_output_text_box.setAlignment(Qt.AlignCenter)
 
         self.my_run_button = QPushButton(self)
         self.my_run_button.setText("Run")
@@ -67,7 +71,7 @@ class MainWindow(QMainWindow):
         self.my_step_in_button.clicked.connect(lambda: self.step_in_event())
 
         self.my_exit_button = QPushButton(self)
-        self.my_exit_button.setText("EXIT")
+        self.my_exit_button.setText("EXIT CL")
         self.my_exit_button.setFixedSize(50,50)
         self.my_exit_button.clicked.connect(lambda: self.exit_button_event())
 
@@ -83,8 +87,6 @@ class MainWindow(QMainWindow):
         self.my_buttons_h_box_layout.insertWidget(2,self.my_debug_button)
         self.my_buttons_h_box_layout.insertWidget(3,self.my_clear_button)
         self.my_buttons_h_box_layout.insertStretch(4)
-
-
 
         self.my_client_status_lbl = QLabel(self)
         self.my_client_status_lbl.setText("Client is not launched")
@@ -134,7 +136,7 @@ class MainWindow(QMainWindow):
         self.lines_marked = True
 
     def launch_client(self):
-        self.my_executor_future = self.my_executor.submit(client.client_loop,self.my_q,self.port)
+        self.my_executor_future = self.my_executor.submit(client.client_loop,self.my_q,self.server_q,self.port)
         self.my_client_status_lbl.setText("Client is launched")
         self.my_is_client_launched = True
 
@@ -149,10 +151,11 @@ class MainWindow(QMainWindow):
 
     def run_button_event(self):
         global current_state
+        if not self.my_text_box.toPlainText().strip():
+            return
+
         self.trim_lines()
         self.send_txt()
-
-        self.mark_lines()
         self.my_output_text_box.clear()
 
         if not self.my_is_client_launched:
@@ -161,10 +164,12 @@ class MainWindow(QMainWindow):
 
     def debug_button_event(self):
         global current_state
+        if not self.my_text_box.toPlainText().strip():
+            return
 
         self.trim_lines()
         self.send_txt()
-        self.mark_lines()
+        # self.mark_lines()
         self.my_output_text_box.clear()
 
         if not self.my_is_client_launched:
@@ -208,20 +213,48 @@ class MainWindow(QMainWindow):
     def timer_check(self):
         global current_state
 
+        try:
+            msg = self.server_q.get(block=False)
+            tokenized_msg = msg.split(m.separator)
+            error_msg = tokenized_msg[0]
+            type_msg = tokenized_msg[1]
+            compilation_msg = tokenized_msg[2]
+            return_msg = tokenized_msg[3]
+            console_msg = tokenized_msg[4]
+
+
+            if error_msg == 'True':
+                self.my_output_text_box.clear()
+                self.my_output_text_box.setText("AN ERROR OCCURED: {0} - {1} - {2}".format(error_msg,type_msg,compilation_msg))
+                current_state = States.IDLE
+            elif error_msg == m.SERVER_ERROR:
+                self.my_output_text_box.clear()
+                self.my_output_text_box.setText("SERVER CLOSED. Closing socket..")
+                current_state = States.IDLE
+                self.exit_button_event()
+            else:
+                self.my_output_text_box.clear()
+                self.my_output_text_box.setText("LINE: {0}\nError Status: {1}\n[{2}] - {3}\nReturn code: {4}\n{5}".format("general compilation" if self.current_debug_line == 0 else self.current_script_lines[self.current_debug_line-1],error_msg,type_msg,compilation_msg,return_msg,console_msg))
+
+        except client.queue.Empty:
+            pass
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
+
         if self.my_executor_future is None:
             self.my_is_client_launched = False
         else:
             if self.my_executor_future.done():
                 self.my_is_client_launched = False
-                if self.my_executor_future.done() is True:
+                if self.my_executor_future.result():
                     self.my_client_status_lbl.setText("Client ended gracefully")
                 else:
-                    self.my_client_status_lbl.setText("Client ended with error")
+                    self.my_client_status_lbl.setText("Client ended with error. Server is unreachable..")
             else:
                 self.my_is_client_launched = True
                 self.my_client_status_lbl.setText("Client is running..")
 
-        # should try to get messages from the queue with purpose UPDATE_CONSOLE OK or ERR sender SERVER destination CLIENT
 
         self.my_step_in_button.setVisible(True if current_state==States.DEBUGGING else False)
         self.my_step_in_button.setDisabled(False if current_state==States.DEBUGGING else True)

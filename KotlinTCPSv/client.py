@@ -1,7 +1,10 @@
+import queue
 import socket
 import sys
 import threading
+import traceback
 from queue import Queue as thr_safe_q, Queue
+
 
 import messages as m
 
@@ -9,15 +12,10 @@ import json
 import select
 import time
 
-from thonny.plugins.microbit.api_stubs.time import sleep
-
-# type: status, error, finished
-# message
-# line
+from messages import JSON_ERROR, JSON_TYPE, JSON_MESSAGE, JSON_RESULT, JSON_CONSOLE, separator, SERVER_ERROR
 
 
-
-def client_loop(q:thr_safe_q[str],port)->bool:
+def client_loop(q:thr_safe_q[str],receiver_q:thr_safe_q[str],port)->bool:
     global max_msg_len
     try:
         cl_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -28,6 +26,9 @@ def client_loop(q:thr_safe_q[str],port)->bool:
     except:
         return False
 
+    receiver_thr = threading.Thread(target=receiver_task,args=(cl_socket,receiver_q))
+    receiver_thr.start()
+
     while True:
         try:
             msg_from_gui = q.get(block=True)
@@ -35,52 +36,49 @@ def client_loop(q:thr_safe_q[str],port)->bool:
             msg_data.unpack_string(msg_from_gui)
             if msg_data.destination == m.CLIENT_NAME and msg_data.purpose == m.PURPOSE_DISCONNECT:
                 cl_socket.close()
+                receiver_thr.join()
                 return True
             if msg_data.destination == m.SERVER_NAME:
                 try:
-                    msg_from_gui = msg_from_gui[:-2]
-                    msg_from_gui = msg_from_gui + "`"
                     msg_from_gui = msg_from_gui.replace("\n","@@@")
                     cl_socket.sendall((msg_from_gui+"\n").encode("utf-8"))
-                except:
-                    print("?????")
+                except (ConnectionRefusedError, socket.timeout):
+                    receiver_thr.join()
+                    return False
         except Queue.queue.Empty:
             pass
         except Exception as e:
             print(f"ERROR processing message from GUI queue: {e}")
 
+
+        time.sleep(0.05)
+
+
+
+def receiver_task(cl_socket, comm_q:thr_safe_q[str]):
+    while(True):
         ready_to_read,_,_ = select.select([cl_socket],[],[],0.05)
 
         if ready_to_read:
             try:
-                msg = cl_socket.recv(m.MAX_MSG_LEN)
-            except BlockingIOError:
-                continue
+                msg_raw = cl_socket.recv(m.MAX_MSG_LEN)
+                msg = msg_raw.decode("utf-8")
+                msg_json = json.loads(msg)
 
-            # msg_json = json.loads(msg)
-            #
-            # msg_type = msg_json.get("type")
-            # msg_content = msg_json.get("message")
-            # msg_line = msg_json.get("line")
-            #
-            # if msg == b'':
-            #     q.put("Server closed")
-            #     cl_socket.close()
-            #     return True
-            # elif msg_type == "status":
-            #     q.put("LINE: {0} - [{1}]:{2}".format(msg_line,msg_type,msg_content))
-            # elif msg_type == "error" or msg_type == "finished":
-            #     q.put("LINE: {0} - [{1}]:{2}".format(msg_line,msg_type,msg_content))
-            #     cl_socket.close()
-            #     return True
-            # else:
-            #     q.put("ERROR: Invalid message received!")
-            #     cl_socket.close()
-            #     return True
+                if msg_raw == b'':
+                    error_msg = SERVER_ERROR
+                else:
+                    error_msg = str(msg_json.get(JSON_ERROR))
 
-            # thr_safe_q.put("SERVER`"+msg.decode("utf-8"))
+                type_msg = str(msg_json.get(JSON_TYPE))
+                message_msg = str(msg_json.get(JSON_MESSAGE))
+                result_msg = str(msg_json.get(JSON_RESULT))
+                console_msg = str(msg_json.get(JSON_CONSOLE))
 
-        time.sleep(0.05)
-
+                comm_q.put(item = error_msg + separator + type_msg + separator + message_msg + separator + result_msg + separator + console_msg + separator,block=True)
+            except queue.Empty:
+                pass
+            except:
+                break
 
 

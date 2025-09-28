@@ -4,9 +4,6 @@ import kotlinx.coroutines.*
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.utils.io.*
-import kotlinx.coroutines.selects.select
-import java.io.InputStream
-import java.io.File
 
 
 suspend fun launch_sv(scope: CoroutineScope) {
@@ -28,7 +25,12 @@ suspend fun launch_sv(scope: CoroutineScope) {
                     val tokenized_received_val = received_val.split('`')
                     val script_txt = tokenized_received_val[3].replace("@@@", "\n")
                     println(script_txt)
+
+
+
+
                     val result = myScriptProcessor.get_eval(script_txt)
+                    cl_send_ch.writeStringUtf8(result+"\n")
 
                     when (tokenized_received_val[1]) {
                         "COMPILE" -> {

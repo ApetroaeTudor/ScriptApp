@@ -10,8 +10,17 @@ PURPOSE_UPDATE_CONSOLE_OK = str("UPDATE_CONSOLE_OK")
 PURPOSE_UPDATE_CONSOLE_ERR = str("UPDATE_CONSOLE_ERR")
 
 
+JSON_ERROR = str("error")
+JSON_TYPE = str("type")
+JSON_MESSAGE = str("message")
+JSON_RESULT = str("result")
+JSON_CONSOLE = str("console")
+
+SERVER_ERROR = str("sv_err")
+
+
 separator = str('`')
-MAX_MSG_LEN = int(256)
+MAX_MSG_LEN = int(1024)
 
 class MessageFrame:
     def __init__(self,sender:str="",purpose:str="",destination:str="",message:str=""):
