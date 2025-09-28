@@ -36,6 +36,14 @@ def client_loop(q:thr_safe_q[str],port)->bool:
             if msg_data.destination == m.CLIENT_NAME and msg_data.purpose == m.PURPOSE_DISCONNECT:
                 cl_socket.close()
                 return True
+            if msg_data.destination == m.SERVER_NAME:
+                try:
+                    msg_from_gui = msg_from_gui[:-2]
+                    msg_from_gui = msg_from_gui + "`"
+                    msg_from_gui = msg_from_gui.replace("\n","@@@")
+                    cl_socket.sendall((msg_from_gui+"\n").encode("utf-8"))
+                except:
+                    print("?????")
         except Queue.queue.Empty:
             pass
         except Exception as e:

@@ -22,7 +22,7 @@ class MessageFrame:
 
     def get_string(self):
         global separator
-        return self.sender+separator+self.purpose+separator+self.destination+separator+self.message
+        return self.sender+separator+self.purpose+separator+self.destination+separator+self.message+separator
 
     def unpack_string(self,msg_str:str):
         global separator
