@@ -4,6 +4,7 @@ import sys
 import threading
 import traceback
 from queue import Queue as thr_safe_q, Queue
+import threading
 
 
 import messages as m
@@ -15,7 +16,7 @@ import time
 from messages import JSON_ERROR, JSON_TYPE, JSON_MESSAGE, JSON_RESULT, JSON_CONSOLE, separator, SERVER_ERROR
 
 
-def client_loop(q:thr_safe_q[str],receiver_q:thr_safe_q[str],port)->bool:
+def client_loop(q:thr_safe_q[str],receiver_q:thr_safe_q[str],port,stop_event:threading.Event)->bool:
     global max_msg_len
     try:
         cl_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -26,10 +27,10 @@ def client_loop(q:thr_safe_q[str],receiver_q:thr_safe_q[str],port)->bool:
     except:
         return False
 
-    receiver_thr = threading.Thread(target=receiver_task,args=(cl_socket,receiver_q))
+    receiver_thr = threading.Thread(target=receiver_task,args=(cl_socket,receiver_q,stop_event))
     receiver_thr.start()
 
-    while True:
+    while not stop_event.is_set():
         try:
             msg_from_gui = q.get(block=True)
             msg_data:m.MessageFrame = m.MessageFrame()
@@ -53,10 +54,11 @@ def client_loop(q:thr_safe_q[str],receiver_q:thr_safe_q[str],port)->bool:
 
         time.sleep(0.05)
 
+    return True
 
 
-def receiver_task(cl_socket, comm_q:thr_safe_q[str]):
-    while(True):
+def receiver_task(cl_socket, comm_q:thr_safe_q[str],stop_event:threading.Event):
+    while not stop_event.is_set():
         ready_to_read,_,_ = select.select([cl_socket],[],[],0.05)
 
         if ready_to_read:

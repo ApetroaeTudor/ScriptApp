@@ -1,12 +1,14 @@
 from queue import Queue
 from enum import Enum
-
+import html
+import threading
 
 import traceback
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QTextCursor, QTextFormat, QTextCharFormat, QColor, QFont
-from PyQt5.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QLabel, QVBoxLayout, QTextEdit, QHBoxLayout
+from PyQt5.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QLabel, QVBoxLayout, QTextEdit, \
+    QHBoxLayout, QTextBrowser
 
 import client
 import messages as m
@@ -25,6 +27,9 @@ class MainWindow(QMainWindow):
     my_q:client.thr_safe_q[str] = client.thr_safe_q()
     server_q:client.thr_safe_q[str] = client.thr_safe_q()
     port = 8080
+
+    stop_event = threading.Event()
+
 
 
     total_nr_lines = 0
@@ -48,11 +53,14 @@ class MainWindow(QMainWindow):
         self.my_text_box = QTextEdit(self)
         self.my_text_box.setFixedSize(200,200)
 
-
-        self.my_output_text_box = QTextEdit(self)
+        self.my_output_text_box = QTextBrowser(self)
         self.my_output_text_box.setReadOnly(True)
         self.my_output_text_box.setFixedSize(500,90)
         self.my_output_text_box.setAlignment(Qt.AlignCenter)
+        self.my_error_line_idx = 0
+        self.my_output_text_box.anchorClicked.connect(lambda: self.move_cursor_to_line(self.my_error_line_idx))
+        self.my_output_text_box.setOpenExternalLinks(False)
+
 
         self.my_run_button = QPushButton(self)
         self.my_run_button.setText("Run")
@@ -136,7 +144,7 @@ class MainWindow(QMainWindow):
         self.lines_marked = True
 
     def launch_client(self):
-        self.my_executor_future = self.my_executor.submit(client.client_loop,self.my_q,self.server_q,self.port)
+        self.my_executor_future = self.my_executor.submit(client.client_loop,self.my_q,self.server_q,self.port,self.stop_event)
         self.my_client_status_lbl.setText("Client is launched")
         self.my_is_client_launched = True
 
@@ -146,8 +154,7 @@ class MainWindow(QMainWindow):
         self.current_script_lines = self.current_script.split("\n")
         with open("MyScript.kts","w") as f:
             f.write(textbox_contents)
-        msg = m.MessageFrame(sender=m.CLIENT_NAME,purpose=m.PURPOSE_COMPILE,destination=m.SERVER_NAME,message=self.current_script).get_string()
-        self.my_q.put(msg,block=False)
+
 
     def run_button_event(self):
         global current_state
@@ -156,6 +163,8 @@ class MainWindow(QMainWindow):
 
         self.trim_lines()
         self.send_txt()
+        msg = m.MessageFrame(sender=m.CLIENT_NAME,purpose=m.PURPOSE_COMPILE,destination=m.SERVER_NAME,message=self.current_script).get_string()
+        self.my_q.put(msg,block=False)
         self.my_output_text_box.clear()
 
         if not self.my_is_client_launched:
@@ -169,6 +178,7 @@ class MainWindow(QMainWindow):
 
         self.trim_lines()
         self.send_txt()
+
         # self.mark_lines()
         self.my_output_text_box.clear()
 
@@ -182,10 +192,11 @@ class MainWindow(QMainWindow):
         self.accumulated_script = self.accumulated_script + self.current_script_lines[self.current_debug_line] + "\n"
         self.current_debug_line = self.current_debug_line+1 if self.current_debug_line<self.total_nr_lines else self.current_debug_line
 
-
         msg_to_sv = m.MessageFrame(sender=m.CLIENT_NAME,purpose=m.PURPOSE_EXECUTE,destination=m.SERVER_NAME,message=self.accumulated_script).get_string()
         self.my_q.put(msg_to_sv,block=False)
         self.my_current_status_lbl.setText("CURRENT STATUS: Debugging, LINE: {0}".format(self.current_debug_line))
+
+
 
         if self.current_debug_line == self.total_nr_lines:
             self.total_nr_lines = 0
@@ -209,6 +220,30 @@ class MainWindow(QMainWindow):
         self.lines_marked = False
 
 
+    def move_cursor_to_line(self, line: int):
+        document = self.my_text_box.document()
+        print(line)
+
+        target_block = document.findBlockByNumber(line - 1)
+
+        if target_block.isValid():
+            cursor = self.my_text_box.textCursor()
+            cursor.setPosition(target_block.position())
+
+            self.my_text_box.setTextCursor(cursor)
+            self.my_text_box.ensureCursorVisible()
+            self.my_text_box.setFocus()
+
+
+    def closeEvent(self, event):
+        self.stop_event.set()
+        self.server_q.put("",block=True)
+        self.my_q.put("",block=True)
+        if self.stop_event.is_set():
+            event.accept()
+        else:
+            event.ignore()
+
 
     def timer_check(self):
         global current_state
@@ -224,17 +259,34 @@ class MainWindow(QMainWindow):
 
 
             if error_msg == 'True':
-                self.my_output_text_box.clear()
-                self.my_output_text_box.setText("AN ERROR OCCURED: {0} - {1} - {2}".format(error_msg,type_msg,compilation_msg))
+                line_idx_start_pos = compilation_msg.find(" - AT [LINE: ")+len(" - AT [LINE: ")
+                line_idx_start_pos = line_idx_start_pos if line_idx_start_pos>=0 else 0
+                line_idx_end_pos = compilation_msg.find(", COLUMN:")
+                line_idx_end_pos = line_idx_end_pos if line_idx_end_pos>=0 else 0
+
+                self.my_error_line_idx = int(compilation_msg[line_idx_start_pos:line_idx_end_pos].strip())
+
+                text_html = f'<a href="{self.my_error_line_idx}">AN ERROR OCCURED: {error_msg} - {type_msg} - {compilation_msg}</a>'
+                self.my_output_text_box.setAcceptRichText(True)
+                self.my_output_text_box.append(text_html)
                 current_state = States.IDLE
+
             elif error_msg == m.SERVER_ERROR:
                 self.my_output_text_box.clear()
-                self.my_output_text_box.setText("SERVER CLOSED. Closing socket..")
+                self.my_output_text_box.setAcceptRichText(False)
+                txt = html.escape("SERVER CLOSED. Closing socket..").replace("\n", "<br>")
+                self.my_output_text_box.setText(txt)
                 current_state = States.IDLE
                 self.exit_button_event()
+            elif error_msg == 'False' and type_msg == 'REAL_TIME':
+                print(console_msg)
+                self.my_output_text_box.setAcceptRichText(False)
+                self.my_output_text_box.append(console_msg)
             else:
-                self.my_output_text_box.clear()
-                self.my_output_text_box.setText("LINE: {0}\nError Status: {1}\n[{2}] - {3}\nReturn code: {4}\n{5}".format("general compilation" if self.current_debug_line == 0 else self.current_script_lines[self.current_debug_line-1],error_msg,type_msg,compilation_msg,return_msg,console_msg))
+                self.my_output_text_box.setAcceptRichText(False)
+                txt = "LINE: {0}\nError Status: {1}\n[{2}] - {3}\nReturn code: {4}\n{5}".format("general compilation" if self.current_debug_line == 0 else self.current_script_lines[self.current_debug_line-1],error_msg,type_msg,compilation_msg,return_msg,console_msg)
+                txt = html.escape(txt).replace("\n","<br>")
+                self.my_output_text_box.append(txt)
 
         except client.queue.Empty:
             pass
@@ -255,14 +307,14 @@ class MainWindow(QMainWindow):
                 self.my_is_client_launched = True
                 self.my_client_status_lbl.setText("Client is running..")
 
-
+        self.my_current_status_lbl.setText("Current Status: RUNNING" if current_state == States.RUNNING else self.my_current_status_lbl.text())
         self.my_step_in_button.setVisible(True if current_state==States.DEBUGGING else False)
         self.my_step_in_button.setDisabled(False if current_state==States.DEBUGGING else True)
         current_state = current_state if self.my_is_client_launched else States.IDLE
         self.my_debug_button.setDisabled(True if current_state==States.RUNNING else False)
         self.my_run_button.setDisabled(True if current_state==States.DEBUGGING else False)
 
-        self.my_text_box.setReadOnly(True if current_state!=States.IDLE else False)
+        # self.my_text_box.setReadOnly(True if current_state!=States.IDLE else False)
         self.total_nr_lines = 0 if current_state==States.IDLE else len(self.my_text_box.toPlainText().split("\n"))
         self.current_debug_line = 0 if current_state == States.IDLE else self.current_debug_line
         self.my_current_status_lbl.setText("CURRENT STATUS: IDLE" if current_state == States.IDLE else self.my_current_status_lbl.text())
@@ -278,3 +330,8 @@ if __name__ == "__main__":
     main_window = MainWindow()
     main_window.show()
     app.exec()
+# val x = 5
+# val y = 6
+# print(x+y)
+# print(x-y)
+# print("hi")
