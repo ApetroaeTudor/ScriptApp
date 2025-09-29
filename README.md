@@ -10,7 +10,8 @@ flowchart TD
     Server -->|execute| Script[Kotlin Scripting API]
     Script -->|return output| GUI
 ```
-~~
+
+
 ### Video demo:
 [![Demo](ScriptTool_JETBRAINS/res/Youtube_logo.png)](https://youtu.be/HaBZ3KGebkg)
 
