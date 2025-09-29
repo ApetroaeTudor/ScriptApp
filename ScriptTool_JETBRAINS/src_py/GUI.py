@@ -1,4 +1,3 @@
-from queue import Queue
 from enum import Enum
 import html
 import threading
@@ -6,7 +5,7 @@ import threading
 import traceback
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QTextCursor, QTextFormat, QTextCharFormat, QColor, QFont
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QMainWindow, QWidget, QPushButton, QApplication, QLabel, QVBoxLayout, QTextEdit, \
     QHBoxLayout, QTextBrowser
 
@@ -32,6 +31,7 @@ class MainWindow(QMainWindow):
 
 
 
+
     total_nr_lines = 0
     current_debug_line = 0
     lines_marked = False
@@ -49,6 +49,7 @@ class MainWindow(QMainWindow):
         self.my_main_widget = QWidget(self)
         self.setCentralWidget(self.my_main_widget)
         self.my_main_widget.setFixedSize(600,600)
+        self.setWindowTitle("ScriptTool")
 
         self.my_text_box = QTextEdit(self)
         self.my_text_box.setFixedSize(200,200)
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         self.my_error_line_idx = 0
         self.my_output_text_box.anchorClicked.connect(lambda: self.move_cursor_to_line(self.my_error_line_idx))
         self.my_output_text_box.setOpenExternalLinks(False)
+        self.my_output_text_box.setOpenLinks(False)
 
 
         self.my_run_button = QPushButton(self)
@@ -89,7 +91,7 @@ class MainWindow(QMainWindow):
         self.my_clear_button.clicked.connect(lambda: self.clear_button_event() )
 
 
-        self.my_buttons_h_box_layout = QHBoxLayout(self)
+        self.my_buttons_h_box_layout = QHBoxLayout()
         self.my_buttons_h_box_layout.insertStretch(0)
         self.my_buttons_h_box_layout.insertWidget(1,self.my_run_button)
         self.my_buttons_h_box_layout.insertWidget(2,self.my_debug_button)
@@ -112,7 +114,7 @@ class MainWindow(QMainWindow):
         self.my_timer.start()
         self.my_timer.timeout.connect(lambda: self.timer_check())
 
-        self.my_v_box_layout = QVBoxLayout(self)
+        self.my_v_box_layout = QVBoxLayout()
         self.my_main_widget.setLayout(self.my_v_box_layout)
         self.my_v_box_layout.insertStretch(0)
         self.my_v_box_layout.insertWidget(1,self.my_current_status_lbl,alignment=Qt.AlignCenter)
@@ -152,7 +154,7 @@ class MainWindow(QMainWindow):
         textbox_contents = self.my_text_box.toPlainText()
         self.current_script = textbox_contents
         self.current_script_lines = self.current_script.split("\n")
-        with open("MyScript.kts","w") as f:
+        with open("../MyScript.kts","w") as f:
             f.write(textbox_contents)
 
 
@@ -272,7 +274,6 @@ class MainWindow(QMainWindow):
                 current_state = States.IDLE
 
             elif error_msg == m.SERVER_ERROR:
-                self.my_output_text_box.clear()
                 self.my_output_text_box.setAcceptRichText(False)
                 txt = html.escape("SERVER CLOSED. Closing socket..").replace("\n", "<br>")
                 self.my_output_text_box.setText(txt)
@@ -330,8 +331,3 @@ if __name__ == "__main__":
     main_window = MainWindow()
     main_window.show()
     app.exec()
-# val x = 5
-# val y = 6
-# print(x+y)
-# print(x-y)
-# print("hi")
